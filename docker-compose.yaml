@@ -1,0 +1,128 @@
+version: '3.8'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend 
+    environment:
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - REDIS_URL=redis://redis:6379/0
+      - TIKTOK_API_KEY=${TIKTOK_API_KEY}
+      - TIKTOK_ADVERTISER_ID=${TIKTOK_ADVERTISER_ID}
+      - FACEBOOK_ACCESS_TOKEN=${FACEBOOK_ACCESS_TOKEN}
+      - FACEBOOK_AD_ACCOUNT_ID=${FACEBOOK_AD_ACCOUNT_ID}
+      - GOOGLE_ADS_CLIENT_ID=${GOOGLE_ADS_CLIENT_ID}
+      - GOOGLE_ADS_CLIENT_SECRET=${GOOGLE_ADS_CLIENT_SECRET}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN}
+      - GOOGLE_ADS_CUSTOMER_ID=${GOOGLE_ADS_CUSTOMER_ID}
+      - GOOGLE_ADS_DEVELOPER_TOKEN=${GOOGLE_ADS_DEVELOPER_TOKEN}
+      - HUGGINGFACE_MODEL=${HUGGINGFACE_MODEL}
+    depends_on:
+      - elasticsearch
+      - minio
+      - redis
+    volumes:
+      - ./:/app
+    networks:
+      - ad-network
+
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: nginx # Build only the 'nginx' stage from the Dockerfile
+    ports:
+      - "8080:80" # Expose port 8080 on the host, mapping to port 80 in the container
+    depends_on:
+      - api
+    networks:
+      - ad-network
+    restart: unless-stopped
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A tasks.celery_tasks worker --loglevel=info
+    environment:
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - REDIS_URL=redis://redis:6379/0
+      - TIKTOK_API_KEY=${TIKTOK_API_KEY}
+      - TIKTOK_ADVERTISER_ID=${TIKTOK_ADVERTISER_ID}
+      - FACEBOOK_ACCESS_TOKEN=${FACEBOOK_ACCESS_TOKEN}
+      - FACEBOOK_AD_ACCOUNT_ID=${FACEBOOK_AD_ACCOUNT_ID}
+      - GOOGLE_ADS_CLIENT_ID=${GOOGLE_ADS_CLIENT_ID}
+      - GOOGLE_ADS_CLIENT_SECRET=${GOOGLE_ADS_CLIENT_SECRET}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN}
+      - GOOGLE_ADS_CUSTOMER_ID=${GOOGLE_ADS_CUSTOMER_ID}
+      - GOOGLE_ADS_DEVELOPER_TOKEN=${GOOGLE_ADS_DEVELOPER_TOKEN}
+      - HUGGINGFACE_MODEL=${HUGGINGFACE_MODEL}
+    depends_on:
+      - redis
+      - elasticsearch
+      - minio
+    volumes:
+      - ./:/app
+    networks:
+      - ad-network
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A tasks.celery_tasks beat --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - ./:/app
+    networks:
+      - ad-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    networks:
+      - ad-network
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - ad-network
+
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ad-network
+
+networks:
+  ad-network:
+    driver: bridge
+
+volumes:
+  es-data:
+  minio-data:
